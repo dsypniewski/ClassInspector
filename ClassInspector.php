@@ -6,73 +6,123 @@
 class ClassInspector
 {
 
-	private $get;
-	private $set;
-	private $call;
-	private $isset;
-	private $unset;
-
-	const MODE_CALL = 0b001;
-	const MODE_WRITE = 0b010;
-	const MODE_READ = 0b100;
-	const MODE_ALL = 0b111;
-	const ERROR_MSG = 'Current mode prohibits this operation type';
+	protected $get;
+	protected $set;
+	protected $call;
+	protected $isset;
+	protected $unset;
+	protected $object;
 
 	/**
 	 * ClassInspector constructor.
 	 * @param object $object
-	 * @param int $mode
-	 * @param null|string $scope
+	 * @param string|object $scope
 	 * @throws \InvalidArgumentException
 	 */
-	public function __construct($object, $mode = self::MODE_READ, $scope = null)
+	public function __construct($object, $scope = null)
 	{
 		if (!is_object($object)) {
 			throw new \InvalidArgumentException('First argument must be an object');
 		}
 
-		if ($scope === null) {
-			$scope = get_class($object);
-		}
+		$this->object = $object;
+		$this->bind($scope === null ? get_class($object) : $scope);
+	}
 
-		if ($mode & self::MODE_READ !== 0) {
-			$this->get = (function ($name) {
-				return $this->{$name};
-			})->bindTo($object, $scope);
+	/**
+	 * @param string|object $scope
+	 * @return void
+	 */
+	public function __invoke($scope)
+	{
+		$this->bind($scope);
+	}
 
-			$this->isset = (function ($name) {
-				return isset($this->{$name});
-			})->bindTo($object, $scope);
-		}
+	/**
+	 * @param string|object $scope
+	 * @return void
+	 */
+	protected function bind($scope)
+	{
+		$this->get = (function ($name) { return $this->{$name}; })->bindTo($this->object, $scope);
+		$this->set = (function ($name, $value) { $this->{$name} = $value; })->bindTo($this->object, $scope);
+		$this->isset = (function ($name) { return isset($this->{$name}); })->bindTo($this->object, $scope);
+		$this->unset = (function ($name) { unset($this->{$name}); })->bindTo($this->object, $scope);
+		$this->call = (function ($name, $args) { return $this->{$name}(...$args); })->bindTo($this->object, $scope);
+	}
 
-		if ($mode & self::MODE_WRITE !== 0) {
-			$this->set = (function ($name, $value) {
-				$this->{$name} = $value;
-			})->bindTo($object, $scope);
+	/**
+	 * @param string|object $class
+	 * @return object
+	 */
+	public static function staticInspector($class)
+	{
+		return new class(new stdClass, $class) extends ClassInspector
+		{
+		
+			protected static $callStatic;
 
-			$this->unset = (function ($name) {
-				unset($this->{$name});
-			})->bindTo($object, $scope);
-		}
+			/**
+			 * @param object|string $scope
+			 */
+			protected function bind($scope)
+			{
+				$this->get = (static function ($name) { return self::${$name}; })->bindTo(null, $scope);
+				$this->set = (static function ($name, $value) { self::${$name} = $value; })->bindTo(null, $scope);
+				$this->isset = (static function ($name) { return isset(self::${$name}); })->bindTo(null, $scope);
+				self::$callStatic = (static function ($name, $args) { return self::{$name}(...$args); })->bindTo(null, $scope);
+			}
 
-		if ($mode & self::MODE_CALL !== 0) {
-			$this->call = (function ($name, $args) {
-				return $this->{$name}(...$args);
-			})->bindTo($object, $scope);
-		}
+			/**
+			 * @param string $name
+			 * @param array $args
+			 * @return mixed
+			 */
+			public static function __callStatic($name, $args)
+			{
+				return (self::$callStatic)($name, $args);
+			}
+
+			/**
+			 * @param object|string $scope
+			 * @return void
+			 * @throws \Exception
+			 */
+			public function __invoke($scope)
+			{
+				throw new \Exception('Unable to change scope for static ClassInspector');
+			}
+
+			/**
+			 * @param string $name
+			 * @param array $args
+			 * @return void
+			 * @throws \Exception
+			 */
+			public function __call($name, $args)
+			{
+				throw new \Exception('Invalid call method for static ClassInspector, please use :: operator');
+			}
+
+			/**
+			 * @param string $name
+			 * @return void
+			 * @throws \Exception
+			 */
+			public function __unset($name)
+			{
+				throw new \Exception('Unset operation is not supported for static properties');
+			}
+		
+		};
 	}
 
 	/**
 	 * @param string $name
 	 * @return mixed
-	 * @throws \Exception
 	 */
 	public function __get($name)
 	{
-		if (!isset($this->get)) {
-			throw new \Exception(self::ERROR_MSG);
-		}
-
 		return ($this->get)($name);
 	}
 
@@ -80,14 +130,9 @@ class ClassInspector
 	 * @param string $name
 	 * @param mixed $value
 	 * @return void
-	 * @throws \Exception
 	 */
 	public function __set($name, $value)
 	{
-		if (!isset($this->set)) {
-			throw new \Exception(self::ERROR_MSG);
-		}
-
 		($this->set)($name, $value);
 	}
 
@@ -95,42 +140,27 @@ class ClassInspector
 	 * @param string $name
 	 * @param array $args
 	 * @return mixed
-	 * @throws \Exception
 	 */
 	public function __call($name, $args)
 	{
-		if (!isset($this->call)) {
-			throw new \Exception(self::ERROR_MSG);
-		}
-
 		return ($this->call)($name, $args);
 	}
 
 	/**
 	 * @param string $name
 	 * @return mixed
-	 * @throws \Exception
 	 */
 	public function __isset($name)
 	{
-		if (!isset($this->isset)) {
-			throw new \Exception(self::ERROR_MSG);
-		}
-
 		return ($this->isset)($name);
 	}
 
 	/**
 	 * @param string $name
 	 * @return void
-	 * @throws \Exception
 	 */
 	public function __unset($name)
 	{
-		if (!isset($this->unset)) {
-			throw new \Exception(self::ERROR_MSG);
-		}
-
 		($this->unset)($name);
 	}
 

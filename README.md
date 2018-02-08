@@ -12,20 +12,15 @@ class TestClass
 	private function privateMethod() { return 2; }
 }
 
-$class = new ClassInspector(new TestClass(), ClassInspector::MODE_ALL);
+$i = new ClassInspector(new TestClass());
 
-// Now you can access private and protected parts of the oryginal class as if they were public
-var_dump($class->privateProperty);
-$class->privateProperty = null;
-unset($class->privateProperty);
-$class->privateMethod();
+// Now you can access private and protected parts of the original class as if they were public
+$i->privateProperty;
+$i->privateProperty = null;
+isset($i->privateProperty);
+unset($i->privateProperty);
+$i->privateMethod();
 ```
-
-## Modes
-`ClassInspector::MODE_READ` - allows reading and isset() for properties (this is the default mode)  
-`ClassInspector::MODE_WRITE` - allows writing and unset() for properties  
-`ClassInspector::MODE_CALL` - allows calls to methods  
-`ClassInspector::MODE_ALL` - shortcut for `ClassInspector::MODE_READ | ClassInspector::MODE_WRITE | ClassInspector::MODE_CALL`
 
 ## Scope
 If you want to access a private properties of one of the parent classes you need to specify the third parameter with the class name.
@@ -42,12 +37,32 @@ class ChildClass extends ParentClass
     private $childPrivateProperty = 2;
 }
 
-$class = new ClassInspector(new ChildClass(), ClassInspector::MODE_ALL, ParentClass::class);
-var_dump($class->parentPrivateProperty); // will work
-var_dump($class->childPrivateProperty); // won't work
+$i = new ClassInspector(new ChildClass(), ParentClass::class);
+var_dump($i->parentPrivateProperty);
+$i(ChildClass::class); // Need to change scope for the next line to work
+var_dump($i->childPrivateProperty);
 ```
 
-The same applies to methods
+## Static inspector
+Example of inspecting static properties/methods
+```php
+<?php
+
+class TestClass
+{
+	private static $privateProperty = 1;
+	private static function privateMethod() { return 2; }
+}
+
+$i = ClassInspector::staticInspector(TestClass::class);
+
+// Now you can access private and protected parts of the original class as if they were public
+$i->privateProperty;
+$i->privateProperty = null;
+isset($i->privateProperty);
+// Unset for static properties is not supported
+$i->privateMethod();
+```
 
 ## License
 ClassInspector is published under the [MIT](LICENSE.txt) license
